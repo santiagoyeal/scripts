@@ -90,6 +90,8 @@ try {
 
 # 8 Limpiar datos de Arc Browser
 
+# 8 Limpiar completamente datos de Arc Browser (historial, sesiones y contraseñas)
+
 try {
 
     Write-Host "Cerrando Arc Browser..."
@@ -97,7 +99,6 @@ try {
     Start-Sleep -Seconds 2
 
     $arcPath = "$env:LOCALAPPDATA\Packages"
-
     $arcFolders = Get-ChildItem $arcPath | Where-Object { $_.Name -like "*Arc*" }
 
     foreach ($folder in $arcFolders) {
@@ -105,20 +106,38 @@ try {
         $userData = "$($folder.FullName)\LocalCache\Local\Arc\User Data\Default"
 
         if (Test-Path $userData) {
+
+            # historial
             Remove-Item "$userData\History*" -Force -ErrorAction SilentlyContinue
+
+            # cache
             Remove-Item "$userData\Cache" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item "$userData\Cookies*" -Force -ErrorAction SilentlyContinue
+
+            # cookies
+            Remove-Item "$userData\Network\Cookies*" -Force -ErrorAction SilentlyContinue
+
+            # contraseñas guardadas
+            Remove-Item "$userData\Login Data*" -Force -ErrorAction SilentlyContinue
+
+            # autofill / datos de formularios
+            Remove-Item "$userData\Web Data*" -Force -ErrorAction SilentlyContinue
+
+            # almacenamiento de sesiones
+            Remove-Item "$userData\Local Storage" -Recurse -Force -ErrorAction SilentlyContinue
+
+            # tokens de sitios (IndexedDB)
+            Remove-Item "$userData\IndexedDB" -Recurse -Force -ErrorAction SilentlyContinue
+
         }
     }
 
-    Write-Host "OK datos de Arc Browser eliminados"
+    Write-Host "OK Arc limpiado (historial, sesiones, cookies y contraseñas)"
 
 } catch {
 
     Write-Host "ERROR limpiando Arc Browser"
 
 }
-
 Write-Host ""
 Write-Host "Limpieza terminada."
 Write-Host ""
