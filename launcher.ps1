@@ -136,25 +136,40 @@ $sshDest = "$env:USERPROFILE\.ssh"
 if (-not (Test-Path $sshSource)) {
     Write-Host "[WARN] No se encontro carpeta SSH en vault. Creando..." -ForegroundColor Yellow
     New-Item -ItemType Directory -Path $sshSource -Force | Out-Null
+}
 
-    $sshKey = Join-Path $sshSource "id_ed25519"
-    if (-not (Test-Path $sshKey)) {
-        $sshKeygenPath = (Get-Command ssh-keygen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
-        if ($sshKeygenPath) {
-            Write-Host "[INFO] Generando par de claves SSH en $sshDest..." -ForegroundColor Cyan
-            & $sshKeygenPath -t ed25519 -C "pc-temporal" -f $sshKey
-            Write-Host "[OK] Clave SSH generada en vault" -ForegroundColor Green
-        } else {
-            Write-Host "[WARN] ssh-keygen no disponible. Cree claves en $sshSource manualmente." -ForegroundColor Yellow
-        }
+# Si ya existe una clave en la ubicación del usuario, no la generamos.
+if (Test-Path (Join-Path $sshDest "id_ed25519")) {
+    Write-Host "[OK] Clave SSH existente encontrada en $sshDest" -ForegroundColor Green
+} else {
+    $sshKeygenPath = (Get-Command ssh-keygen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+    if ($sshKeygenPath) {
+        Write-Host "[INFO] Generando nueva clave SSH en la ubicación por defecto ($sshDest) ..." -ForegroundColor Cyan
+        & $sshKeygenPath -t ed25519 -C "pc-temporal"
+        Write-Host "[OK] Generación completada (ubicación por defecto)" -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] ssh-keygen no disponible. Cree claves en $sshDest manualmente." -ForegroundColor Yellow
+    }
+
+    # Si se generó en la ubicación por defecto, copia una copia al vault para portabilidad
+    if (Test-Path (Join-Path $sshDest "id_ed25519")) {
+        try {
+            Copy-Item -Path (Join-Path $sshDest "*") -Destination $sshSource -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "[OK] Copia de seguridad de claves al vault: $sshSource" -ForegroundColor Green
+        } catch {}
     }
 }
 
-if (Test-Path $sshDest) {
-    Remove-Item $sshDest -Recurse -Force
+# Sincronizar: si el vault tiene claves, sobreescribir la ubicación del usuario; si no, asegurarnos que $sshDest existe y respaldar en vault.
+if ((Test-Path $sshSource) -and ((Get-ChildItem $sshSource -Force | Measure-Object).Count -gt 0)) {
+    if (Test-Path $sshDest) { Remove-Item $sshDest -Recurse -Force }
+    Copy-Item $sshSource $sshDest -Recurse -Force
+} else {
+    if (-not (Test-Path $sshDest)) { New-Item -ItemType Directory -Path $sshDest -Force | Out-Null }
+    if (Test-Path (Join-Path $sshDest "id_ed25519")) {
+        try { Copy-Item -Path (Join-Path $sshDest "*") -Destination $sshSource -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+    }
 }
-
-Copy-Item $sshSource $sshDest -Recurse -Force
 
 try {
     icacls $sshDest /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
@@ -170,13 +185,16 @@ if (-not (Test-Path $pubKeyPath)) {
 }
 
 if (-not (Test-Path $pubKeyPath)) {
-    # Generar par de claves si no existe
-    $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
-    if ($sshKeygen) {
-        Write-Host "[INFO] Generando par de claves SSH en $sshDest..." -ForegroundColor Cyan
-        & $sshKeygen -q -t ed25519 -N "" -f $privKeyPath | Out-Null
-        $pubKeyPath = "$privKeyPath.pub"
+    # Generar par de claves si no existe (usar ubicación por defecto)
+    $sshKeygenPath = (Get-Command ssh-keygen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+    if ($sshKeygenPath) {
+        Write-Host "[INFO] Generando par de claves SSH en la ubicación por defecto ($sshDest)..." -ForegroundColor Cyan
+        & $sshKeygenPath -t ed25519 -C "pc-temporal"
+        $pubKeyPath = Join-Path $sshDest "id_ed25519.pub"
         Write-Host "[OK] Clave SSH generada en: $pubKeyPath" -ForegroundColor Green
+        if (Test-Path $sshSource) {
+            try { Copy-Item -Path (Join-Path $sshDest "*") -Destination $sshSource -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+        }
     } else {
         Write-Host "[WARN] No se encontro ssh-keygen. Genera una clave manualmente:" -ForegroundColor Yellow
         Write-Host "      ssh-keygen -t ed25519 -f $sshDest\id_ed25519" -ForegroundColor Yellow
