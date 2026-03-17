@@ -92,12 +92,30 @@ Write-Host "Configurando Git..." -ForegroundColor Cyan
 
 $gitExe = "$usbRoot\apps\git\bin\git.exe"
 
-if (Test-Path $gitExe) {
+if (-not (Test-Path $gitExe)) {
+    $gitInPath = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitInPath) {
+        $gitExe = $gitInPath.Source
+        Write-Host "[OK] Usando git desde PATH: $gitExe" -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] Git portable no encontrado" -ForegroundColor Yellow
+        $gitBinDir = Split-Path $gitExe -Parent
+        New-Item -ItemType Directory -Path $gitBinDir -Force | Out-Null
+        $wrapper = Join-Path $gitBinDir "git.cmd"
+        if (-not (Test-Path $wrapper)) {
+            '@echo off
+ echo Git no encontrado. Instale Git en el sistema o agregue "git" al PATH.' | Out-File -FilePath $wrapper -Encoding ASCII -Force
+        }
+        $gitExe = $wrapper
+    }
+}
+
+try {
     & $gitExe config --global user.name "TuNombre"
     & $gitExe config --global user.email "tu@email.com"
     Write-Host "[OK] Git configurado"
-} else {
-    Write-Host "[WARN] Git portable no encontrado" -ForegroundColor Yellow
+} catch {
+    Write-Host "[WARN] No se pudo configurar Git (no disponible o fallo)" -ForegroundColor Yellow
 }
 
 if (Test-Path "$vault\git\.gitconfig") {
@@ -115,22 +133,33 @@ Write-Host "Configurando SSH..." -ForegroundColor Cyan
 $sshSource = "$vault\ssh"
 $sshDest = "$env:USERPROFILE\.ssh"
 
-if (Test-Path $sshSource) {
+if (-not (Test-Path $sshSource)) {
+    Write-Host "[WARN] No se encontro carpeta SSH en vault. Creando..." -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path $sshSource -Force | Out-Null
 
-    if (Test-Path $sshDest) {
-        Remove-Item $sshDest -Recurse -Force
+    $sshKey = Join-Path $sshSource "id_rsa"
+    if (-not (Test-Path $sshKey)) {
+        $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
+        if ($sshKeygen) {
+            & $sshKeygen -t rsa -b 2048 -N "" -f $sshKey | Out-Null
+            Write-Host "[OK] Clave SSH generada en vault" -ForegroundColor Green
+        } else {
+            Write-Host "[WARN] ssh-keygen no disponible. Cree claves en $sshSource manualmente." -ForegroundColor Yellow
+        }
     }
-
-    Copy-Item $sshSource $sshDest -Recurse -Force
-
-    try {
-        icacls $sshDest /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
-    } catch {}
-
-    Write-Host "[OK] SSH listo"
-} else {
-    Write-Host "[WARN] No se encontró carpeta SSH en vault"
 }
+
+if (Test-Path $sshDest) {
+    Remove-Item $sshDest -Recurse -Force
+}
+
+Copy-Item $sshSource $sshDest -Recurse -Force
+
+try {
+    icacls $sshDest /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
+} catch {}
+
+Write-Host "[OK] SSH listo"
 
 Write-Host ""
 
@@ -173,11 +202,23 @@ Write-Host "Abriendo VS Code..." -ForegroundColor Cyan
 
 $vscodeExe = "$usbRoot\apps\vscode\Code.exe"
 
+$codeCmd = Get-Command code -ErrorAction SilentlyContinue
+
 if (Test-Path $vscodeExe) {
     Start-Process $vscodeExe
     Write-Host "[OK] VS Code iniciado"
+} elseif ($codeCmd) {
+    Start-Process $codeCmd.Source
+    Write-Host "[OK] VS Code (sistema) iniciado"
 } else {
-    Write-Host "[WARN] No se encontró VS Code portable"
+    Write-Host "[WARN] No se encontro VS Code portable ni comando 'code' en PATH" -ForegroundColor Yellow
+    $vscodeDir = Split-Path $vscodeExe -Parent
+    New-Item -ItemType Directory -Path $vscodeDir -Force | Out-Null
+    $stub = Join-Path $vscodeDir "Code.cmd"
+    if (-not (Test-Path $stub)) {
+        '@echo off
+        echo VS Code no encontrado. Instale VS Code o copie una version portable en este directorio.' | Out-File -FilePath $stub -Encoding ASCII -Force
+    }
 }
 
 Write-Host ""
