@@ -137,11 +137,12 @@ if (-not (Test-Path $sshSource)) {
     Write-Host "[WARN] No se encontro carpeta SSH en vault. Creando..." -ForegroundColor Yellow
     New-Item -ItemType Directory -Path $sshSource -Force | Out-Null
 
-    $sshKey = Join-Path $sshSource "id_rsa"
+    $sshKey = Join-Path $sshSource "id_ed25519"
     if (-not (Test-Path $sshKey)) {
-        $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
-        if ($sshKeygen) {
-            & $sshKeygen -q -t rsa -b 2048 -N "" -f $sshKey | Out-Null
+        $sshKeygenPath = (Get-Command ssh-keygen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+        if ($sshKeygenPath) {
+            Write-Host "[INFO] Generando par de claves SSH en $sshDest..." -ForegroundColor Cyan
+            & $sshKeygenPath -t ed25519 -C "pc-temporal" -f $sshKey
             Write-Host "[OK] Clave SSH generada en vault" -ForegroundColor Green
         } else {
             Write-Host "[WARN] ssh-keygen no disponible. Cree claves en $sshSource manualmente." -ForegroundColor Yellow
@@ -158,6 +159,53 @@ Copy-Item $sshSource $sshDest -Recurse -Force
 try {
     icacls $sshDest /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
 } catch {}
+
+# Asegurarse de tener una clave publica para GitHub (ed25519 preferida)
+$pubKeyPath = Join-Path $sshDest "id_ed25519.pub"
+$privKeyPath = Join-Path $sshDest "id_ed25519"
+
+if (-not (Test-Path $pubKeyPath)) {
+    $pubKeyPath = Join-Path $sshDest "id_rsa.pub"
+    $privKeyPath = Join-Path $sshDest "id_rsa"
+}
+
+if (-not (Test-Path $pubKeyPath)) {
+    # Generar par de claves si no existe
+    $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
+    if ($sshKeygen) {
+        Write-Host "[INFO] Generando par de claves SSH en $sshDest..." -ForegroundColor Cyan
+        & $sshKeygen -q -t ed25519 -N "" -f $privKeyPath | Out-Null
+        $pubKeyPath = "$privKeyPath.pub"
+        Write-Host "[OK] Clave SSH generada en: $pubKeyPath" -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] No se encontro ssh-keygen. Genera una clave manualmente:" -ForegroundColor Yellow
+        Write-Host "      ssh-keygen -t ed25519 -f $sshDest\id_ed25519" -ForegroundColor Yellow
+    }
+}
+
+# Mostrar instrucción para agregar la clave a GitHub
+if (Test-Path $pubKeyPath) {
+    Write-Host "" 
+    Write-Host "---" -ForegroundColor DarkGray
+    Write-Host "Clave publica SSH (copiar al portapapeles):" -ForegroundColor Green
+    Write-Host "URL: https://github.com/settings/keys" -ForegroundColor Cyan
+    Write-Host "" 
+    Get-Content $pubKeyPath | ForEach-Object { Write-Host $_ }
+    Write-Host "---" -ForegroundColor DarkGray
+
+    # Intentar copiar al portapapeles
+    try {
+        Get-Content $pubKeyPath | Set-Clipboard
+        Write-Host "La clave se copio al portapapeles. Pega en GitHub." -ForegroundColor Green
+    } catch {
+        Write-Host "No se pudo copiar al portapapeles. Copia manualmente desde el archivo." -ForegroundColor Yellow
+    }
+    Write-Host "" 
+    Write-Host "Luego prueba la conexión con: ssh -T git@github.com" -ForegroundColor Cyan
+} else {
+    Write-Host "[WARN] No se encontro clave publica SSH (id_ed25519.pub o id_rsa.pub)." -ForegroundColor Yellow
+    Write-Host "Crea una con: ssh-keygen -t ed25519 -f $sshDest\id_ed25519" -ForegroundColor Yellow
+}
 
 Write-Host "[OK] SSH listo"
 
