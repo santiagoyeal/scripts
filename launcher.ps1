@@ -111,9 +111,38 @@ if (-not (Test-Path $gitExe)) {
 }
 
 try {
-    & $gitExe config --global user.name "TuNombre"
-    & $gitExe config --global user.email "tu@email.com"
-    Write-Host "[OK] Git configurado"
+    $existingName = ""
+    $existingEmail = ""
+    try { $existingName = (& $gitExe config --global user.name) -as [string] } catch {}
+    try { $existingEmail = (& $gitExe config --global user.email) -as [string] } catch {}
+
+    if ($existingName) {
+        $keep = Read-Host "Git user.name actual: '$existingName'. Mantener? [Y/n]"
+        if ($keep -match '^[Nn]') {
+            $newName = Read-Host "Nuevo user.name para Git:"
+            if ($newName) { & $gitExe config --global user.name $newName }
+        } else {
+            Write-Host "[OK] Manteniendo user.name: $existingName" -ForegroundColor Green
+        }
+    } else {
+        $newName = Read-Host "Introduce user.name para Git (requerido):"
+        if ($newName) { & $gitExe config --global user.name $newName }
+    }
+
+    if ($existingEmail) {
+        $keep = Read-Host "Git user.email actual: '$existingEmail'. Mantener? [Y/n]"
+        if ($keep -match '^[Nn]') {
+            $newEmail = Read-Host "Nuevo user.email para Git:"
+            if ($newEmail) { & $gitExe config --global user.email $newEmail }
+        } else {
+            Write-Host "[OK] Manteniendo user.email: $existingEmail" -ForegroundColor Green
+        }
+    } else {
+        $newEmail = Read-Host "Introduce user.email para Git (requerido):"
+        if ($newEmail) { & $gitExe config --global user.email $newEmail }
+    }
+
+    Write-Host "[OK] Git configurado" -ForegroundColor Green
 } catch {
     Write-Host "[WARN] No se pudo configurar Git (no disponible o fallo)" -ForegroundColor Yellow
 }
@@ -218,8 +247,35 @@ if (Test-Path $pubKeyPath) {
     } catch {
         Write-Host "No se pudo copiar al portapapeles. Copia manualmente desde el archivo." -ForegroundColor Yellow
     }
-    Write-Host "" 
-    Write-Host "Luego prueba la conexión con: ssh -T git@github.com" -ForegroundColor Cyan
+
+    # Probar si la clave está autorizada en GitHub
+    try {
+        $sshTest = & ssh -T -o BatchMode=yes git@github.com 2>&1
+    } catch {
+        $sshTest = $_.Exception.Message
+    }
+
+    if ($sshTest -match "successfully authenticated" -or $sshTest -match "Hi ") {
+        Write-Host "[OK] La clave SSH está autorizada en GitHub." -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] La clave SSH NO parece estar autorizada en GitHub." -ForegroundColor Yellow
+        $resp = Read-Host "Deseas generar una nueva clave y sobrescribir la existente? [y/N]"
+        if ($resp -match '^[Yy]') {
+            $sshKeygenPath = (Get-Command ssh-keygen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+            if ($sshKeygenPath) {
+                Write-Host "Generando nueva clave (sobrescribiendo) en $sshDest ..." -ForegroundColor Cyan
+                & $sshKeygenPath -q -t ed25519 -C "pc-temporal" -N "" -f "$privKeyPath" | Out-Null
+                $pubKeyPath = "$privKeyPath.pub"
+                Write-Host "[OK] Nueva clave generada: $pubKeyPath" -ForegroundColor Green
+                try { Get-Content $pubKeyPath | Set-Clipboard; Write-Host "La nueva clave se copio al portapapeles." -ForegroundColor Green } catch {}
+                if (Test-Path $sshSource) { try { Copy-Item -Path (Join-Path $sshDest "*") -Destination $sshSource -Recurse -Force -ErrorAction SilentlyContinue } catch {} }
+            } else {
+                Write-Host "No se encontro ssh-keygen para generar nueva clave." -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "De acuerdo, no se sobrescribirá la clave. Agrega la clave pública a GitHub manualmente si quieres." -ForegroundColor Cyan
+        }
+    }
 } else {
     Write-Host "[WARN] No se encontro clave publica SSH (id_ed25519.pub o id_rsa.pub)." -ForegroundColor Yellow
     Write-Host "Crea una con: ssh-keygen -t ed25519 -f $sshDest\id_ed25519" -ForegroundColor Yellow
