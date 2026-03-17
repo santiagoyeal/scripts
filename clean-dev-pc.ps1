@@ -138,6 +138,58 @@ try {
     Write-Host "ERROR limpiando Arc Browser"
 
 }
+try {
+    Write-Host ""
+    Write-Host "Limpiando elementos recientes de Windows y Jump Lists..."
+
+    $recent = "$env:APPDATA\Microsoft\Windows\Recent"
+    if (Test-Path $recent) {
+        Get-ChildItem $recent -Force -Recurse | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+        Write-Host "OK elementos recientes eliminados"
+    } else {
+        Write-Host "INFO No existe carpeta Recent"
+    }
+
+    $auto = "$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations"
+    $custom = "$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations"
+    foreach ($p in @($auto, $custom)) {
+        if (Test-Path $p) {
+            Remove-Item "$p\*" -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Write-Host "OK Jump Lists eliminadas"
+
+} catch {
+    Write-Host "ERROR limpiando recientes/Jump Lists"
+}
+
+try {
+    Write-Host ""
+    Write-Host "Cerrando y limpiando datos de VS Code (recientes y workspace storage)..."
+    Get-Process Code, 'Code - Insiders' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+
+    $vscApp = "$env:APPDATA\Code"
+    if (Test-Path $vscApp) {
+        $recentFiles = @("$vscApp\User\recentlyOpened.json", "$vscApp\User\recentlyOpenedWorkspaces.json", "$vscApp\User\recentlyOpenedFolders.json")
+        foreach ($f in $recentFiles) {
+            if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+        }
+
+        $dirs = @("$vscApp\User\workspaceStorage", "$vscApp\Backups", "$vscApp\Local Storage", "$vscApp\Storage", "$vscApp\User\globalStorage")
+        foreach ($d in $dirs) {
+            if (Test-Path $d) { Remove-Item "$d\*" -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+
+        Write-Host "OK VS Code limpiado (recientes y workspace storage)"
+    } else {
+        Write-Host "INFO No se encontró datos de VS Code en AppData"
+    }
+
+} catch {
+    Write-Host "ERROR limpiando VS Code"
+}
 Write-Host ""
 Write-Host "Limpieza terminada."
 Write-Host ""
