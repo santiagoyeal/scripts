@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Continue"
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "   CONFIGURANDO ENTORNO PORTABLE 🚀" -ForegroundColor Cyan
+Write-Host "   CONFIGURANDO ENTORNO PORTABLE" -ForegroundColor Cyan
 Write-Host "========================================="
 Write-Host ""
 
@@ -19,11 +19,11 @@ Write-Host "Buscando vault de Cryptomator..." -ForegroundColor Cyan
 
 $vault = $null
 
-# 🔥 Obtener TODAS las unidades reales (incluye red)
+# Obtener TODAS las unidades reales (incluye red)
 $drives = Get-CimInstance Win32_LogicalDisk | Where-Object {
     $_.DriveType -eq 2 -or  # USB
     $_.DriveType -eq 3 -or  # Disco local
-    $_.DriveType -eq 4      # RED (Cryptomator 👀)
+    $_.DriveType -eq 4      # RED (Cryptomator)
 }
 
 foreach ($drive in $drives) {
@@ -33,20 +33,20 @@ foreach ($drive in $drives) {
     Write-Host "Revisando: $root" -ForegroundColor DarkGray
 
     if (Test-Path "$root\.devusb") {
-        Write-Host "✔ .devusb encontrado en $root" -ForegroundColor Green
+        Write-Host "[OK] .devusb encontrado en $root" -ForegroundColor Green
         $vault = $root
         break
     }
 
     # fallback por estructura
-    if (Test-Path "$root\Desarrollo" -and Test-Path "$root\scripts") {
-        Write-Host "✔ Estructura detectada en $root" -ForegroundColor Green
+    if ((Test-Path "$root\Desarrollo") -and (Test-Path "$root\scripts")) {
+        Write-Host "[OK] Estructura detectada en $root" -ForegroundColor Green
         $vault = $root
         break
     }
 }
 
-# 🔥 EXTRA: detectar rutas tipo UNC (Cryptomator WebDAV)
+# EXTRA: detectar rutas tipo UNC (Cryptomator WebDAV)
 if (-not $vault) {
 
     Write-Host "Buscando en rutas UNC (Cryptomator WebDAV)..." -ForegroundColor Yellow
@@ -58,7 +58,7 @@ if (-not $vault) {
             $testRoot = $p.FullName + "\"
 
             if (Test-Path "$testRoot\.devusb") {
-                Write-Host "✔ Vault detectado en $testRoot" -ForegroundColor Green
+                Write-Host "[OK] Vault detectado en $testRoot" -ForegroundColor Green
                 $vault = $testRoot
                 break
             }
@@ -68,22 +68,21 @@ if (-not $vault) {
     }
 }
 
-# ❌ ERROR FINAL
+# ERROR FINAL
 if (-not $vault) {
     Write-Host ""
-    Write-Host "❌ ERROR: No se encontró el vault." -ForegroundColor Red
+    Write-Host "[ERROR] No se encontró el vault." -ForegroundColor Red
     Write-Host "Asegúrate de que Cryptomator esté desbloqueado." -ForegroundColor Yellow
     Write-Host ""
 
     Write-Host "Unidades detectadas:" -ForegroundColor Gray
     $drives | ForEach-Object { Write-Host " - $($_.DeviceID)" }
 
-    Read-Host "Presiona ENTER para salir"
-    exit
+    return
 }
 
 Write-Host ""
-Write-Host "✅ Vault detectado en: $vault" -ForegroundColor Green
+Write-Host "[OK] Vault detectado en: $vault" -ForegroundColor Green
 Write-Host ""
 
 # -------------------------
@@ -96,14 +95,14 @@ $gitExe = "$usbRoot\apps\git\bin\git.exe"
 if (Test-Path $gitExe) {
     & $gitExe config --global user.name "TuNombre"
     & $gitExe config --global user.email "tu@email.com"
-    Write-Host "✔ Git configurado"
+    Write-Host "[OK] Git configurado"
 } else {
-    Write-Host "⚠ Git portable no encontrado" -ForegroundColor Yellow
+    Write-Host "[WARN] Git portable no encontrado" -ForegroundColor Yellow
 }
 
 if (Test-Path "$vault\git\.gitconfig") {
     Copy-Item "$vault\git\.gitconfig" "$env:USERPROFILE\.gitconfig" -Force
-    Write-Host "✔ .gitconfig cargado desde vault"
+    Write-Host "[OK] .gitconfig cargado desde vault"
 }
 
 Write-Host ""
@@ -128,9 +127,9 @@ if (Test-Path $sshSource) {
         icacls $sshDest /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
     } catch {}
 
-    Write-Host "✔ SSH listo"
+    Write-Host "[OK] SSH listo"
 } else {
-    Write-Host "⚠ No se encontró carpeta SSH en vault"
+    Write-Host "[WARN] No se encontró carpeta SSH en vault"
 }
 
 Write-Host ""
@@ -148,7 +147,7 @@ if (!(Test-Path $vscodeUser)) {
 
 if (Test-Path "$vault\vscode\settings.json") {
     Copy-Item "$vault\vscode\settings.json" "$vscodeUser\settings.json" -Force
-    Write-Host "✔ settings.json aplicado"
+    Write-Host "[OK] settings.json aplicado"
 }
 
 Write-Host ""
@@ -162,7 +161,7 @@ $gitPath = "$usbRoot\apps\git\bin"
 
 if (Test-Path $gitPath) {
     $env:PATH = "$gitPath;$env:PATH"
-    Write-Host "✔ PATH actualizado"
+    Write-Host "[OK] PATH actualizado"
 }
 
 Write-Host ""
@@ -176,14 +175,14 @@ $vscodeExe = "$usbRoot\apps\vscode\Code.exe"
 
 if (Test-Path $vscodeExe) {
     Start-Process $vscodeExe
-    Write-Host "✔ VS Code iniciado"
+    Write-Host "[OK] VS Code iniciado"
 } else {
-    Write-Host "⚠ No se encontró VS Code portable"
+    Write-Host "[WARN] No se encontró VS Code portable"
 }
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Green
-Write-Host "   ENTORNO LISTO 🚀" -ForegroundColor Green
+Write-Host "   ENTORNO LISTO" -ForegroundColor Green
 Write-Host "========================================="
 Write-Host ""
 
