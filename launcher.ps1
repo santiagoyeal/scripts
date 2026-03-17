@@ -141,7 +141,7 @@ if (-not (Test-Path $sshSource)) {
     if (-not (Test-Path $sshKey)) {
         $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
         if ($sshKeygen) {
-            & $sshKeygen -t rsa -b 2048 -N "" -f $sshKey | Out-Null
+            & $sshKeygen -q -t rsa -b 2048 -N "" -f $sshKey | Out-Null
             Write-Host "[OK] Clave SSH generada en vault" -ForegroundColor Green
         } else {
             Write-Host "[WARN] ssh-keygen no disponible. Cree claves en $sshSource manualmente." -ForegroundColor Yellow
