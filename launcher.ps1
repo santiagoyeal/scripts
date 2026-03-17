@@ -9,33 +9,72 @@ Write-Host ""
 $usbRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # -------------------------
-# 1. DETECTAR VAULT AUTOMÁTICAMENTE
+# 1. DETECTAR VAULT AUTOMÁTICAMENTE (MEJORADO)
 # -------------------------
 Write-Host "Buscando vault de Cryptomator..." -ForegroundColor Cyan
 
 $vault = $null
 
-$drives = Get-PSDrive -PSProvider FileSystem | Where-Object {
-    $_.Free -ne $null
-}
+# 1️⃣ Buscar en unidades normales (C:, D:, etc.)
+$drives = Get-PSDrive -PSProvider FileSystem
 
 foreach ($drive in $drives) {
 
-    # OPCIÓN 1: archivo identificador (RECOMENDADO)
-    $testPath = "$($drive.Root).devusb"
+    $root = $drive.Root
 
-    # OPCIÓN 2 (fallback): estructura conocida
-    $altPath = "$($drive.Root)git\.gitconfig"
+    if (Test-Path $root) {
 
-    if (Test-Path $testPath -or Test-Path $altPath) {
-        $vault = $drive.Root
-        break
+        if (Test-Path "$root\.devusb") {
+            $vault = $root
+            break
+        }
+
+        # fallback por estructura
+        if (Test-Path "$root\Desarrollo" -and Test-Path "$root\scripts") {
+            $vault = $root
+            break
+        }
     }
 }
 
+# 2️⃣ Buscar en rutas tipo Cryptomator (WebDAV)
+if (-not $vault) {
+
+    Write-Host "Buscando rutas tipo Cryptomator..." -ForegroundColor Yellow
+
+    try {
+        $cryptPaths = Get-ChildItem "\\cryptomator-vault\" -ErrorAction Stop
+
+        foreach ($p in $cryptPaths) {
+
+            $testRoot = $p.FullName
+
+            if (Test-Path "$testRoot\.devusb") {
+                $vault = $testRoot
+                break
+            }
+        }
+    } catch {
+        # No pasa nada si no existe la ruta
+    }
+}
+
+# 3️⃣ FALLBACK FINAL (si sabes que es D:)
+if (-not $vault) {
+
+    if (Test-Path "D:\.devusb") {
+        $vault = "D:\"
+    }
+}
+
+# ERROR FINAL
 if (-not $vault) {
     Write-Host "ERROR: No se encontró el vault." -ForegroundColor Red
-    Write-Host "Asegúrate de desbloquearlo en Cryptomator." -ForegroundColor Yellow
+    Write-Host "Verifica que esté abierto en Cryptomator." -ForegroundColor Yellow
+
+    Write-Host "Unidades detectadas:" -ForegroundColor Gray
+    $drives | ForEach-Object { Write-Host " - $($_.Root)" }
+
     Read-Host "Presiona ENTER para salir"
     exit
 }
@@ -55,7 +94,6 @@ if (Test-Path $gitExe) {
     & $gitExe config --global user.email "tu@email.com"
 }
 
-# Copiar gitconfig desde vault
 if (Test-Path "$vault\git\.gitconfig") {
     Copy-Item "$vault\git\.gitconfig" "$env:USERPROFILE\.gitconfig" -Force
 }
@@ -79,7 +117,6 @@ if (Test-Path $sshSource) {
 
     Copy-Item $sshSource $sshDest -Recurse -Force
 
-    # Permisos seguros
     icacls $sshDest /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
 
     Write-Host "SSH listo"
