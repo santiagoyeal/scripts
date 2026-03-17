@@ -90,7 +90,9 @@ try {
 
 # 8 Limpiar datos de Arc Browser
 
-# 8 Limpiar completamente datos de Arc Browser (historial, sesiones y contraseñas)
+# 8 Limpiar completamente datos de Arc Browser (historial, sesiones, contraseñas y extension Bitwarden)
+
+$bitwardenExtensionId = "nngceckbapebfimnlniiiahkandclblb"
 
 try {
 
@@ -99,44 +101,95 @@ try {
     Start-Sleep -Seconds 2
 
     $arcPath = "$env:LOCALAPPDATA\Packages"
-    $arcFolders = Get-ChildItem $arcPath | Where-Object { $_.Name -like "*Arc*" }
+    $arcFolders = Get-ChildItem $arcPath -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*Arc*" }
 
     foreach ($folder in $arcFolders) {
 
-        $userData = "$($folder.FullName)\LocalCache\Local\Arc\User Data\Default"
+        $userDataRoot = "$($folder.FullName)\LocalCache\Local\Arc\User Data"
 
-        if (Test-Path $userData) {
+        if (Test-Path $userDataRoot) {
+            $profiles = Get-ChildItem $userDataRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq "Default" -or $_.Name -like "Profile *" }
 
-            # historial
-            Remove-Item "$userData\History*" -Force -ErrorAction SilentlyContinue
+            foreach ($profile in $profiles) {
+                $userData = $profile.FullName
 
-            # cache
-            Remove-Item "$userData\Cache" -Recurse -Force -ErrorAction SilentlyContinue
+                # historial
+                Remove-Item "$userData\History*" -Force -ErrorAction SilentlyContinue
 
-            # cookies
-            Remove-Item "$userData\Network\Cookies*" -Force -ErrorAction SilentlyContinue
+                # cache
+                Remove-Item "$userData\Cache" -Recurse -Force -ErrorAction SilentlyContinue
 
-            # contraseñas guardadas
-            Remove-Item "$userData\Login Data*" -Force -ErrorAction SilentlyContinue
+                # cookies
+                Remove-Item "$userData\Network\Cookies*" -Force -ErrorAction SilentlyContinue
 
-            # autofill / datos de formularios
-            Remove-Item "$userData\Web Data*" -Force -ErrorAction SilentlyContinue
+                # contraseñas guardadas
+                Remove-Item "$userData\Login Data*" -Force -ErrorAction SilentlyContinue
 
-            # almacenamiento de sesiones
-            Remove-Item "$userData\Local Storage" -Recurse -Force -ErrorAction SilentlyContinue
+                # autofill / datos de formularios
+                Remove-Item "$userData\Web Data*" -Force -ErrorAction SilentlyContinue
 
-            # tokens de sitios (IndexedDB)
-            Remove-Item "$userData\IndexedDB" -Recurse -Force -ErrorAction SilentlyContinue
+                # almacenamiento de sesiones
+                Remove-Item "$userData\Local Storage" -Recurse -Force -ErrorAction SilentlyContinue
 
+                # tokens de sitios (IndexedDB)
+                Remove-Item "$userData\IndexedDB" -Recurse -Force -ErrorAction SilentlyContinue
+
+                # datos de extension Bitwarden (incluye correo/sesion de extension)
+                Remove-Item "$userData\Local Extension Settings\$bitwardenExtensionId" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item "$userData\Sync Extension Settings\$bitwardenExtensionId" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item "$userData\IndexedDB\chrome-extension_$($bitwardenExtensionId)_0.indexeddb.leveldb" -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
-    Write-Host "OK Arc limpiado (historial, sesiones, cookies y contraseñas)"
+    Write-Host "OK Arc limpiado (historial, sesiones, cookies, contraseñas y datos de Bitwarden)"
 
 } catch {
 
     Write-Host "ERROR limpiando Arc Browser"
 
+}
+try {
+    Write-Host ""
+    Write-Host "Cerrando Word y Excel para limpiar recientes..."
+    Get-Process WINWORD, EXCEL -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+
+    $officeRecent = "$env:APPDATA\Microsoft\Office\Recent"
+    if (Test-Path $officeRecent) {
+        Remove-Item "$officeRecent\*" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $officeRoot = "HKCU:\Software\Microsoft\Office"
+    if (Test-Path $officeRoot) {
+        $versions = Get-ChildItem $officeRoot -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -match '^\d+\.\d+$' }
+
+        foreach ($ver in $versions) {
+            foreach ($app in @("Word", "Excel")) {
+                $appRoot = Join-Path $ver.PSPath $app
+                if (-not (Test-Path $appRoot)) { continue }
+
+                $mruKeys = Get-ChildItem $appRoot -Recurse -ErrorAction SilentlyContinue |
+                    Where-Object { $_.PSChildName -like "*MRU*" }
+
+                foreach ($k in $mruKeys) {
+                    $valueNames = (Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue |
+                        Get-Member -MemberType NoteProperty |
+                        Select-Object -ExpandProperty Name)
+
+                    foreach ($name in $valueNames) {
+                        Remove-ItemProperty -LiteralPath $k.PSPath -Name $name -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+        }
+    }
+
+    Write-Host "OK recientes de Word/Excel eliminados"
+} catch {
+    Write-Host "ERROR limpiando recientes de Word/Excel"
 }
 try {
     Write-Host ""
